@@ -1,0 +1,173 @@
+#!/usr/bin/env bash
+
+VERSION=1
+
+######################################################################################
+# This script is based on the original work of Jerry, WF5W.                          #
+# His original script can be seen at https://github.com/wf5w/yspots/blob/main/yspots #
+# modified for Conky display by KM4ACK 18JUNE2023.  His original script can be       #
+#  seen at https://github.com/km4ack/pi-scripts/blob/master/spot-pota                #
+# then modified for  VK/ZL multiple spots by VK2JDL 6 AUGUST 2023                    #
+#                                                                                    #
+# This script will get the latest 10 VK & ZL Operators and show SOTA/POTA/VKFF etc   #
+# spots and display them on the desktop using Conky.                                 #
+######################################################################################
+#                                                                                    #
+# Install Instructions                                                               #
+#                                                                                    #
+# 1) Install "sota-spots" in /Downloads folder, using nano                           #
+#                                                                                    #
+#    2) Install ".conkyrc-sota" in home/pi folder, using nano                        #
+#                                                                                    #
+#    	3) Build with "bash soya-spots install" from /Downloads folder               #
+#                                                                                    #
+######################################################################################
+
+
+
+
+
+uninstall(){
+    ###########
+    # REMOVAL #
+    ###########
+	    echo "you may be prompted to enter sudo password during uninstall process"
+	    sleep 1
+		rm $HOME/.conkyrc-sota
+		sudo rm /usr/local/bin/sota-spots
+		sudo rm $HOME/.config/autostart/conky-sota.desktop
+		
+	    crontab -l > /run/user/$UID/cron.txt
+		sed -i /CONKY-SOTA/d /run/user/$UID/cron.txt
+		sed -i /sota-spots/d /run/user/$UID/cron.txt
+		#
+	    crontab /run/user/$UID/cron.txt
+	    echo "uninstall complete"
+	    exit 0
+}
+
+install(){
+    ###########
+    # INSTALL #
+    ###########
+    clear; echo; echo
+    echo "######################################"
+    echo "# Every 5-15 minutes is recommended. #"
+    echo "######################################"; echo
+    read -p "How often would you like to check for new spots? (in minutes) " min
+    echo $min
+
+    # need jq & conky for this command to run
+    if [ ! $(which jq) ]; then
+      echo "you need jq: do sudo apt install jq"
+      exit 1
+    fi
+
+    if [ ! $(which conky) ]; then
+      echo "you need conky: do sudo apt install conky"
+      exit 1
+    fi
+
+    #make script exec and move script to /usr/local/bin
+    if [ ! -f /usr/local/bin/sota-spots ]; then
+	    sudo chmod +x sota-spots
+	    echo "moving file to /usr/local/bin/"
+	    echo "enter sudo password if asked"
+	    sudo mv sota-spots /usr/local/bin/sota-spots
+	    sudo chmod +x /usr/local/bin/sota-spots
+	    RUN=1
+    fi
+
+    #download custom conky file if not found
+    if [ ! -f $HOME/.conkyrc-sota ]; then
+	    echo "SOTA conky file not found. downloading"
+	    cd $HOME
+	    wget https://github.com/VK2JDL/SOTA-Spots/blob/main/conkyrc-sota.txt
+	    RUN=1
+    else
+	    echo "SOTA conky file found"
+    fi
+
+    #verify script will run with cron
+    CK=$(crontab -l | grep "CONKY-SOTA")
+	    if [ -z "${CK}" ]; then
+	    echo "updating cron"
+	    crontab -l > /run/user/$UID/cron.txt
+	    echo "#get sota spots for CONKY-SOTA" >> /run/user/$UID/cron.txt
+	    echo "*/${min} * * * * /usr/local/bin/sota-spots" >> /run/user/$UID/cron.txt
+	    crontab /run/user/$UID/cron.txt
+	    RUN=1
+    else
+	    echo "SOTA Conky won't run under Cron"
+    fi
+
+    #set to auto start at boot if needed
+    if [ ! -f $HOME/.config/autostart/conky-sota.desktop ]; then
+	    echo "creating auto start file"
+	    echo "[Desktop Entry]" > $HOME/.config/autostart/conky-sota.desktop
+	    echo "Name=Conky" >> $HOME/.config/autostart/conky-sota.desktop
+	    echo "Comment=Conky" >> $HOME/.config/autostart/conky-sota.desktop
+	    echo "GenericName=Conky Screen Background Monitor" >> $HOME/.config/autostart/conky-sota.desktop
+	    echo "Exec=conky -c $HOME/.conkyrc-sota --pause=5" >> $HOME/.config/autostart/conky-sota.desktop
+	    echo "Icon=/home/pi/73Linux/data/ico/conky-logo.png" >> $HOME/.config/autostart/conky-sota.desktop
+	    echo "Type=Application" >> $HOME/.config/autostart/conky-sota.desktop
+	    echo "Encoding=UTF-8" >> $HOME/.config/autostart/conky-sota.desktop
+	    echo "Terminal=false" >> $HOME/.config/autostart/conky-sota.desktop
+	    echo "Categories=HamRadio" >> $HOME/.config/autostart/conky-sota.desktop
+	    echo "Keywords=Radio" >> $HOME/.config/autostart/conky-sota.desktop
+	    RUN=1
+    fi
+}
+
+#test to see if this is first run
+if [ "$RUN" = 1 ]; then
+    # echo "install complete. POTA spots will not appear"
+    echo "install complete. SOTA spots will not appear"
+    echo "on desktop until reboot is initiated."
+    # echo "73, de KM4ACK"
+    echo "73, de VK2JDL"
+    exit
+fi
+
+#check to see if install or uninstalling
+if [ "$1" = 'install' ]; then
+    install
+elif [ "$1" = 'uninstall' ]; then
+    uninstall
+fi
+
+###############
+# MAIN SCRIPT #
+###############
+url='https://www.parksnpeaks.org/api/VK'
+outfile=/run/user/$UID/spots.json
+outfile1=/run/user/$UID/temp.out.txt
+
+curl -s $url > $outfile 
+n=$(cat $outfile | jq '. [] | {actClass: .actClass, actCallsign: .actCallsign, actFreq: .actFreq}' | jq '. .actClass' | wc -l)
+
+let n=$(($n - 1))
+
+rm -f $outfile1
+echo "sorting data thru jq"
+x=1
+for s in $(seq 0 $n); do
+  echo "processing record $x"
+    class=$(cat $outfile | jq ". [$s] | .actClass")
+    call=$(cat $outfile | jq ". [$s] | .actCallsign")
+    freq=$(cat $outfile | jq ". [${s}] | .actFreq")
+  loc=$(cat $outfile | jq ". [${s}] | .actSiteID")
+  mode=$(cat $outfile | jq ". [${s}] | .actMode")
+
+  if [ "${mode}" = '""' ]; then
+    mode='n/a'
+  fi
+
+  printf "%-10s %-12s %-12s %-8s %-8s %s 16\n" ${class} ${call} ${loc} ${freq} ${mode} | tr -d '"' >> $outfile1
+  ((x++))
+done
+
+mv $outfile1 /run/user/$UID/spots.txt
+rm -f spots.json
+
+

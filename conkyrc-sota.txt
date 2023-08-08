@@ -33,6 +33,10 @@ conky.config = {
 conky.text = [[
 
 ${voffset 15}
-${font Arial:size=30}${color White}${alignc}SOTA SPOTS
-${font Arial:bold:size=12}${color White}${execi 60 cat /run/user/1000/spots.txt | head -39}
+${font Arial:size=30}${color White}${alignc}Last 10 VK/ZL SPOTS
+${font Arial:bold:size=12}${color White}${execi 60 cat /run/user/1000/spots.txt | head -20}
+${voffset 30}
+${font Arial:size=30}${color White}${alignc}ALERTS
+${font Arial:bold:size=12}${color White}${execi 60 cat /run/user/1000/alerts.txt | head -39}
+
 ]];
